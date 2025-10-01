@@ -1,7 +1,5 @@
 <h1 align="center">Agent and Bullet Detection in Combat: Plane</h1>
 
-# Agent and Bullet Detection in Combat Plane
-
 This project implements a **multi-agent reinforcement learning system** for the Combat Plane environment using **PettingZoo** and **Stable-Baselines3**. The system features different agent types with specialized reward functions for **offensive**, **defensive**, and **hybrid** behaviors.
 
 ---
