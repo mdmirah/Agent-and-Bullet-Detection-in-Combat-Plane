@@ -14,10 +14,10 @@ The project trains intelligent agents to play the **Combat Plane game (bi-plane 
 
 ### Core Components
 
-- **Plane Detection:** Identifies agent and enemy positions using R-channel analysis.
+- **Plane Detection:** Identifies agent and enemy positions using R-channel analysis (Blue and Red circles).
 <img width="488" height="374" alt="image" src="https://github.com/user-attachments/assets/38472cc6-7ae6-4322-aa3d-4f904e37905b" />
 
-- **Bullet Detection:** Computer vision-based bullet tracking with filtering.
+- **Bullet Detection:** Computer vision-based bullet tracking with filtering (Green circles).
 <img width="488" height="381" alt="image" src="https://github.com/user-attachments/assets/ed27f755-29fa-4b52-a3fa-aafe0f37c5f2" />
 
 - **Toroidal Distance Calculations:** Handles wrap-around game mechanics for the Atari environment.
