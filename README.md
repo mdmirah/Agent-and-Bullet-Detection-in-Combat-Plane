@@ -128,10 +128,10 @@ The project includes comprehensive visualization tools:
 ```
 ## Citation
 ```
-@misc{combat_plane_agent_detection_2024,
+@misc{combat_plane_agent_detection_2025,
   author = {Rahman, Md Mijanur and Kemp, Ayden},
   title = {Agent and Bullet Detection in Combat Plane},
-  year = {2024},
+  year = {2025},
   publisher = {GitHub},
   journal = {GitHub repository},
   howpublished = {\url{https://github.com/mdmirah/Agent-and-Bullet-Detection-in-Combat-Plane}}
