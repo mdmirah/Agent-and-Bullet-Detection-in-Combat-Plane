@@ -1,6 +1,6 @@
 <h1 align="center">Agent and Bullet Detection in Combat: Plane</h1>
 
-This project implements a **multi-agent reinforcement learning system** for the Combat Plane environment using **PettingZoo** and **Stable-Baselines3**. The system features different agent types with specialized reward functions for **offensive**, **defensive**, and **hybrid** behaviors.
+This project implements a **multi-agent reinforcement learning system** for the Combat Plane environment using **PettingZoo** and **Stable-Baselines3**. The system features different agent types with specialized reward functions for **offensive**, **defensive**, and **hybrid** (Experimental) behaviors.
 
 ---
 
@@ -11,6 +11,17 @@ The project trains intelligent agents to play the **Combat Plane game (bi-plane 
 ---
 
 ## Features
+
+### Core Components
+
+- **Plane Detection:** Identifies agent and enemy positions using R-channel analysis.
+<img width="488" height="374" alt="image" src="https://github.com/user-attachments/assets/38472cc6-7ae6-4322-aa3d-4f904e37905b" />
+
+- **Bullet Detection:** Computer vision-based bullet tracking with filtering.
+<img width="488" height="381" alt="image" src="https://github.com/user-attachments/assets/ed27f755-29fa-4b52-a3fa-aafe0f37c5f2" />
+
+- **Toroidal Distance Calculations:** Handles wrap-around game mechanics for the Atari environment.
+- **Custom Reward Engineering:** Domain-specific heuristic driven reward shaping for offensive and defensive agents as well as an experimental hybrid agent.
 
 ### Agent Types
 
@@ -29,13 +40,6 @@ The project trains intelligent agents to play the **Combat Plane game (bi-plane 
   - Combines offensive and defensive strategies
   - Tracks own bullets to distinguish from enemy bullets
   - Balanced reward system for versatile gameplay
-
-### Core Components
-
-- **Plane Detection:** Identifies agent and enemy positions using R-channel analysis
-- **Bullet Detection:** Computer vision-based bullet tracking with filtering
-- **Toroidal Distance Calculations:** Handles wrap-around game mechanics
-- **Custom Reward Engineering:** Domain-specific reward shaping
 
 ---
 
