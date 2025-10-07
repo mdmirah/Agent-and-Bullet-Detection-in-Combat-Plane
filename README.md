@@ -1,6 +1,6 @@
 <h1 align="center">Agent and Bullet Detection in Combat: Plane</h1>
 
-This project implements a **multi-agent reinforcement learning system** for the Combat Plane environment using **PettingZoo** and **Stable-Baselines3**. This project augments the Combat:Plane environment by adding cutom functions for agent and bullet detection to design custom heuristics for offensive, defensive and hybrid agents. By using these custom functions, unique reward functions for **offensive**, **defensive**, and **hybrid** agents are created, tested and validated. We have seen our custom offensive and defensive agents both outperform (As per their designed heuristic) the baseline agent of the Combat: Plane environment. A **hybrid** agent has also been designed in the codebase which is to be tested in future work.
+In this project Ayden kemp and I have implemented a **multi-agent reinforcement learning system** for the Combat Plane environment using **PettingZoo** and **Stable-Baselines3**. This project augments the Combat:Plane environment by adding cutom functions for agent and bullet detection to design custom heuristics for offensive, defensive and hybrid agents. By using these custom functions, unique reward functions for **offensive**, **defensive**, and **hybrid** agents are created, tested and validated. We have seen our custom offensive and defensive agents both outperform (As per their designed heuristic) the baseline agent of the Combat: Plane environment. A **hybrid** agent has also been designed in the codebase which is to be tested in future work.
 
 ---
 
