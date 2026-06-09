@@ -291,6 +291,140 @@ def find_bullet_positions(
 
     return bullet_positions
 ```
+Action Space Reduction
+```
+import gymnasium as gym
+from pettingzoo.utils.wrappers import BaseWrapper
+
+mapping = [0, 1, 2, 5, 10, 13]
+
+class ReduceActionSpaceWrapper(BaseWrapper):
+    """
+    Maps a small discrete action space (0..K-1) to the original ALE action ids.
+    """
+    def __init__(self, env, mapping):
+        super().__init__(env)
+        self.mapping = list(mapping)
+        self._reduced_space = gym.spaces.Discrete(len(self.mapping))
+
+    def action_space(self, agent):
+        return self._reduced_space
+
+    def step(self, action):
+        # PettingZoo expects None for dead steps
+        if action is None:
+            return super().step(None)
+        # Map reduced action -> original ALE action
+        return super().step(self.mapping[int(action)])
+```
+
+Feature Extraction
+```
+def wrapped_delta(a, b, size):
+    """
+    Signed shortest wrapped difference from a to b on periodic domain [0, size).
+    Result is in [-size/2, size/2].
+    """
+    d = b - a
+    if d > size / 2:
+        d -= size
+    elif d < -size / 2:
+        d += size
+    return d
+
+def nearest_bullet_relative(bullets, self_pos, max_row, max_col):
+    """
+    Returns signed wrapped relative position (dr, dc) of nearest bullet to self.
+    If no bullets, returns (0, 0, 0) where final 0 is a 'has_bullet' flag.
+    """
+    if self_pos is None or not bullets:
+        return 0.0, 0.0, 0.0
+
+    best = None
+    best_dist = None
+
+    for (bx, by) in bullets:
+        # bullet positions are (x, y), planes are (row, col)
+        # so convert bullet to (row, col) = (y, x)
+        br, bc = by, bx
+
+        dr = wrapped_delta(self_pos[0], br, max_row)
+        dc = wrapped_delta(self_pos[1], bc, max_col)
+        dist = np.sqrt(dr**2 + dc**2)
+
+        if best_dist is None or dist < best_dist:
+            best_dist = dist
+            best = (dr, dc)
+
+    return best[0], best[1], 1.0
+
+def extract_features_from_obs(observation, self_target=223, opp_target=111):
+    """
+    observation: raw RGB image, shape (256, 160, 3)
+
+    Returns feature vector as np.float32
+    """
+    max_row = observation.shape[0]   # 256
+    max_col = observation.shape[1]   # 160
+
+    R = get_cleaned_R(observation)
+
+    self_pos = find_plane_position(R, self_target)
+    opp_pos = find_plane_position(R, opp_target)
+    bullets = find_bullet_positions(R, step_count=None, visualize=False)
+
+    # Defaults if detection fails
+    if self_pos is None:
+        self_pos = (0, 0)
+        self_found = 0.0
+    else:
+        self_found = 1.0
+
+    if opp_pos is None:
+        opp_pos = (0, 0)
+        opp_found = 0.0
+    else:
+        opp_found = 1.0
+
+    # Absolute normalized positions
+    self_r = self_pos[0] / max_row
+    self_c = self_pos[1] / max_col
+    opp_r = opp_pos[0] / max_row
+    opp_c = opp_pos[1] / max_col
+
+    # Wrapped relative position from self -> opponent
+    dr = wrapped_delta(self_pos[0], opp_pos[0], max_row) / (max_row / 2)
+    dc = wrapped_delta(self_pos[1], opp_pos[1], max_col) / (max_col / 2)
+
+    # Toroidal distance normalized
+    dist = toroidal_distance(self_pos, opp_pos, max_row, max_col)
+    if dist is None:
+        dist = 0.0
+    max_dist = np.sqrt((max_row / 2)**2 + (max_col / 2)**2)
+    dist = dist / max_dist
+
+    # Nearest bullet relative to self
+    bdr, bdc, has_bullet = nearest_bullet_relative(bullets, self_pos, max_row, max_col)
+    bdr /= (max_row / 2)
+    bdc /= (max_col / 2)
+
+    bullet_count = min(len(bullets), 10) / 10.0
+
+    features = np.array([
+        self_r, self_c,
+        opp_r, opp_c,
+        dr, dc,
+        dist,
+        bdr, bdc,
+        has_bullet,
+        bullet_count,
+        self_found,
+        opp_found,
+    ], dtype=np.float32)
+
+    return features
+```
+
 Offensive Reward Wrapper
 ```
 # Optional print statements for troubleshooting are presently commented out
@@ -355,14 +489,6 @@ class DefensiveRewardWrapper(BaseWrapper):
         self.bullet_value = bullet_value
         self.bullet_block_size = bullet_block_size
         self.first_0_step_count = 0
-
-        self.action_labels = {
-            0: "No operation", 1: "Fire", 2: "Move up", 3: "Move right",
-            4: "Move left", 5: "Move down", 6: "Move upright", 7: "Move upleft",
-            8: "Move downright", 9: "Move downleft", 10: "Fire up", 11: "Fire right",
-            12: "Fire left", 13: "Fire down", 14: "Fire upright", 15: "Fire upleft",
-            16: "Fire downright", 17: "Fire downleft"
-        }
 
     def step(self, action):
         agent = self.agent_selection
@@ -455,6 +581,134 @@ class DefensiveRewardWrapper(BaseWrapper):
               f"Firing Penalty: {firing_penalty:.4f}, "
               f"Total Reward: {self.rewards[agent]:.4f}\n")
 ```
+
+Hybrid Reward Wrapper
+```
+class HybridRewardWrapper(BaseWrapper):
+    def __init__(self, env, shoot_actions=None,
+                 proximity_threshold=264, max_proximity_score=0.25,
+                 hit_multiplier=0.5,
+                 bullet_value=255, hit_radius=3,
+                 bullet_proximity_threshold=15, bullet_proximity_penalty_scale=-0.3,
+                 own_bullet_memory=5):
+        super().__init__(env)
+        self.env = env
+        self.shoot_actions = shoot_actions or {1, 10, 11, 12, 13, 14, 15, 16, 17}
+        self.proximity_threshold = proximity_threshold
+        self.max_proximity_score = max_proximity_score
+        self.hit_multiplier = hit_multiplier
+        self.bullet_value = bullet_value
+        self.hit_radius = hit_radius
+        self.bullet_proximity_threshold = bullet_proximity_threshold
+        self.bullet_proximity_penalty_scale = bullet_proximity_penalty_scale
+        self.own_bullet_memory = own_bullet_memory
+        self.first_0_step_count = 0
+        self.own_bullet_positions = []
+
+    def step(self, action):
+        agent = self.agent_selection
+        super().step(action)
+
+        if agent != "first_0" or agent not in self.agents:
+            return
+
+        self.first_0_step_count += 1
+        observation = self.env.observe(agent)
+        R = get_cleaned_R(observation)
+
+        # Detect plane positions
+        first_pos = find_plane_position(R, 223)
+        second_pos = find_plane_position(R, 111)
+
+        # Visualize the observation
+        visualize_rgb_image(observation, self.first_0_step_count)
+        visualize_planes(R, self.first_0_step_count)
+
+        # Detect all bullets
+        bullets = find_bullet_positions(
+            R,
+            step_count=self.first_0_step_count,
+            white_thresh_low=100,
+            white_thresh_high=255,
+            min_bullet_area=0.5,
+            max_bullet_area=1.0,
+            edge_margin=2,
+            visualize=True
+        )
+
+        # Reward components
+        proximity_reward = 0.0
+        hit_reward = 0.0
+        bullet_proximity_penalty = 0.0
+        damage_penalty = 0.0
+
+        # Track own bullet firing position
+        if action in self.shoot_actions and first_pos:
+            self.own_bullet_positions.append({
+                "pos": first_pos,
+                "step": self.first_0_step_count
+            })
+
+        # Remove expired own bullets
+        self.own_bullet_positions = [
+            b for b in self.own_bullet_positions
+            if self.first_0_step_count - b["step"] <= self.own_bullet_memory
+        ]
+
+        # Filter out self bullets
+        enemy_bullets = []
+        for bpos in bullets:
+            if all(toroidal_distance(bpos, ob["pos"], R.shape[0], R.shape[1]) > 5
+                   for ob in self.own_bullet_positions):
+                enemy_bullets.append(bpos)
+
+        # Proximity reward (offensive)
+        if first_pos and second_pos:
+            dist = toroidal_distance(first_pos, second_pos, R.shape[0], R.shape[1])
+            if dist is not None and dist < self.proximity_threshold:
+                proximity_reward = self.max_proximity_score * (self.proximity_threshold - dist) / self.proximity_threshold
+                self.rewards[agent] += proximity_reward
+
+        # Hit reward (amplified)
+        original = self.rewards[agent]
+        if original > 0:
+            hit_reward = original * self.hit_multiplier
+            self.rewards[agent] += hit_reward
+
+        # Bullet proximity penalty (enemy bullets only)
+        if first_pos and enemy_bullets:
+            distances = [toroidal_distance(first_pos, bpos, R.shape[0], R.shape[1]) for bpos in enemy_bullets]
+            distances = [d for d in distances if d is not None]
+            if distances:
+                closest = min(distances)
+                if closest <= self.bullet_proximity_threshold:
+                    bullet_proximity_penalty = self.bullet_proximity_penalty_scale * (
+                        (self.bullet_proximity_threshold - closest) / self.bullet_proximity_threshold
+                    )
+                    self.rewards[agent] += bullet_proximity_penalty
+
+        # Damage penalty (enemy bullets only)
+        if first_pos:
+            for bpos in enemy_bullets:
+                dist_to_self = toroidal_distance(first_pos, bpos, R.shape[0], R.shape[1])
+                if dist_to_self is not None and dist_to_self <= self.hit_radius:
+                    damage_penalty = -1.0
+                    self.rewards[agent] += damage_penalty
+                    break
+
+        # Final reward breakdown
+        action_label = self.action_labels.get(action, "Unknown")
+        print(f"[HYBRID] Step {self.first_0_step_count}, Agent: {agent} took action {action} ({action_label})")
+        print(f"→ First Pos: {first_pos}, Second Pos: {second_pos}")
+        print(f"→ Proximity Reward: +{proximity_reward:.4f}")
+        print(f"→ Hit Reward Multiplier: +{hit_reward:.4f}")
+        print(f"→ Bullet Proximity Penalty: {bullet_proximity_penalty:.4f}")
+        print(f"→ Damage Penalty: {damage_penalty:.4f}")
+        print(f"→ Total Reward: {self.rewards[agent]:.4f}\n")
+        print(f"[DEBUG] Own bullets tracked: {[ob['pos'] for ob in self.own_bullet_positions]}")
+        print(f"[DEBUG] Enemy bullets: {enemy_bullets}")
+```
+
 ## Visualization
 
 The project includes comprehensive visualization tools:
