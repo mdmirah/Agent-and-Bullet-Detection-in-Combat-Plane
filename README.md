@@ -363,7 +363,7 @@ def visualize_planes(R, step=None):
 ```
 - Bullet Detection Overlay: Shows identified bullets on game frame
 ```
-# Subsection of previous bullet detection code...
+# Subsection of previous bullet detection code, other sections commented out...
 """
 def find_bullet_positions(
     R,
