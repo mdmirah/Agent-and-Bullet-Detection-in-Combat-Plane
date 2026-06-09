@@ -297,7 +297,7 @@ def toroidal_distance(pos1, pos2, max_row, max_col):
 
 The project includes comprehensive visualization tools:
 - RGB Image Display: Shows full game state
-  ```
+```
 def visualize_rgb_image(rgb_image, step=None, title="RGB Image"):
     """
     Displays the full RGB image.
@@ -314,7 +314,7 @@ def visualize_rgb_image(rgb_image, step=None, title="RGB Image"):
     plt.axis('off')
     plt.tight_layout()
     plt.show()
-  ```
+```
 - R-Channel Analysis: Displays processed red channel data
 - Plane Position Tracking: Visualizes detected agent and enemy positions
 - Bullet Detection Overlay: Shows identified bullets on game frame
