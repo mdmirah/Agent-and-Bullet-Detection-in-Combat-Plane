@@ -957,6 +957,182 @@ model = PPO(
 model.learn(total_timesteps=500_000, callback=[checkpoint_callback], reset_num_timesteps=False)
 ```
 
+## Trained Agent Testing 
+CNN Based Agent Testing
+```
+# --------------------------------------------------
+# Example Test... Head-to-head CNN evaluation: BL vs Off
+# --------------------------------------------------
+
+test_env = combat_plane_v2.env(render_mode='rgb_array' ,game_version='bi-plane', guided_missile=False) # Other option is 'human'
+mapping = [0, 1, 2, 5, 10, 13]
+test_env = ReduceActionSpaceWrapper(test_env, mapping)
+test_env = ss.color_reduction_v0(test_env, mode='B')
+test_env = ss.resize_v1(test_env, x_size=84, y_size=84)
+test_env = ss.frame_stack_v1(test_env, 4)
+test_env = ss.black_death_v3(test_env)
+test_env.reset()
+
+frames = []
+episode_rewards = []
+MAX_TOTAL_FRAMES = 5_000 #32_000
+frame_count = 0
+
+while frame_count < MAX_TOTAL_FRAMES:
+    test_env.reset()
+    total_reward = 0
+
+    for agent in test_env.agent_iter():
+        obs, reward, terminated, truncated, _ = test_env.last()
+        done = terminated or truncated
+
+        if agent == "first_0":
+            total_reward += reward
+            #action = 0 if not done else None # No Action
+            #action = Off_5.predict(obs, deterministic=True)[0] if not done else None # Offensive Agent
+            #action = Def_5.predict(obs, deterministic=True)[0] if not done else None # Defensive Agent
+            action = BL_100k.predict(obs, deterministic=True)[0] if not done else None # Baseline Agent
+            #action = test_env.action_space(agent).sample() if not done else None  # Random Agent
+        else:
+            #action = 0 if not done else None # No Action
+            action = Off_5.predict(obs, deterministic=True)[0] if not done else None # Offensive Agent
+            #action = Def_5.predict(obs, deterministic=True)[0] if not done else None # Defensive Agent
+            #action = BL_100k.predict(obs, deterministic=True)[0] if not done else None # Baseline Agent
+            #action = test_env.action_space(agent).sample() if not done else None  # Random Agent
+            
+            
+
+        test_env.step(action)
+
+        # Capture and store rendered frame
+        frame = test_env.render()
+        if frame is not None:
+            frames.append(Image.fromarray(frame))
+
+        frame_count += 1
+        if frame_count >= MAX_TOTAL_FRAMES:
+            break
+
+    episode_rewards.append(total_reward)
+
+# Save video
+video_path = "/content/combat_plane_ai_vs_random.mp4"
+imageio.mimsave(video_path, frames, fps=15)
+
+print(f"Episode ended after {len(episode_rewards)} episodes")
+print(f"Saved video with {len(frames)} frames")
+```
+
+MLP Based Agent Testing
+```
+import numpy as np
+import imageio
+from PIL import Image
+
+# --------------------------------------------------
+# Example Test... Head-to-head MLP evaluation: Def_5 vs Off_5
+# --------------------------------------------------
+
+frames = []
+episode_rewards = []
+MAX_TOTAL_FRAMES = 10_000
+max_episode_steps = 5000
+
+# Build the raw AEC env
+env = make_feature_aec_base_test()
+
+# Identify agents
+agent_names = env.possible_agents
+print("Possible agents:", agent_names)
+
+def_agent = "first_0"
+off_agent = "second_0"
+
+# Map models to agents
+agent_models = {
+    def_agent: Def_5,
+    off_agent: Off_5
+}
+
+feature_targets = {
+    def_agent: {"self_target": 223, "opp_target": 111},
+    off_agent: {"self_target": 111, "opp_target": 223}
+}
+
+def get_feature_obs(env, agent):
+    raw_obs = env.observe(agent)
+    return extract_features_from_obs(
+        raw_obs,
+        self_target=feature_targets[agent]["self_target"],
+        opp_target=feature_targets[agent]["opp_target"]
+    ).astype(np.float32)
+
+frame_count = 0
+episode_step_count = 0
+current_episode_rewards = {def_agent: 0.0, off_agent: 0.0}
+episodes_completed = 0
+
+env.reset(seed=42)
+
+while frame_count < MAX_TOTAL_FRAMES:
+    for agent in env.agent_iter():
+        obs, reward, terminated, truncated, info = env.last()
+
+        # reward returned by env.last() belongs to the CURRENT agent
+        current_episode_rewards[agent] += float(reward)
+
+        if terminated or truncated:
+            action = None
+        else:
+            feature_obs = get_feature_obs(env, agent)
+            model = agent_models[agent]
+            action, _ = model.predict(feature_obs, deterministic=True)
+
+        env.step(action)
+
+        # Render after every action
+        frame = env.render()
+        if frame is not None:
+            frames.append(Image.fromarray(frame))
+            frame_count += 1
+
+        episode_step_count += 1
+
+        # Stop if we hit global frame budget
+        if frame_count >= MAX_TOTAL_FRAMES:
+            break
+
+        # If episode ended for all agents, log and reset
+        if all(env.terminations.values()) or all(env.truncations.values()) or episode_step_count >= max_episode_steps:
+            episode_rewards.append({
+                def_agent: current_episode_rewards[def_agent],
+                off_agent: current_episode_rewards[off_agent]
+            })
+
+            episodes_completed += 1
+            current_episode_rewards = {def_agent: 0.0, off_agent: 0.0}
+            episode_step_count = 0
+
+            env.reset()
+            break
+
+    if frame_count >= MAX_TOTAL_FRAMES:
+        break
+
+env.close()
+
+# Save video
+video_path = "/content/combat_plane_mlp_vs_mlp_test.mp4"
+imageio.mimsave(video_path, frames, fps=15)
+
+print(f"Episodes completed: {episodes_completed}")
+print(f"Saved video with {len(frames)} frames")
+print("Episode rewards:")
+for i, r in enumerate(episode_rewards, 1):
+    print(f"Episode {i}: {def_agent}={r[def_agent]:.2f}, {off_agent}={r[off_agent]:.2f}")
+print("Video saved to:", video_path)
+```
+
 ## File Structure
 ```
 ├── Agent_and_Bullet_Detection_in_Combat_Plane_Oct_1_2025.ipynb
