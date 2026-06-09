@@ -112,6 +112,8 @@ model = PPO("CnnPolicy", env, n_steps=768, batch_size=256, verbose=1)
 model.learn(total_timesteps=10000, callback=checkpoint_callback)
 ```
 ## Custom Functions
+
+
 Image Extraction and Filtering to Red (R) Channel Only
 ```
 def get_cleaned_R(observation):
