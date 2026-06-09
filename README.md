@@ -123,10 +123,13 @@ def get_cleaned_R(observation):
         R_cleaned (ndarray): A (256, 160) array with scoreboard regions set to 0.
     """
     R = observation[:, :, 0].copy()
+
     # Zero out first_0's scoreboard (rows 4:14, cols 32:44)
     R[4:14, 32:44] = 0
+
     # Zero out second_0's scoreboard (rows 4:14, cols 87:99)
     R[4:14, 112:124] = 0
+
     return R
 ```
 
@@ -135,14 +138,18 @@ Toroidal Distance and Mean Functions
 def toroidal_distance(pos1, pos2, max_row, max_col):
     if pos1 is None or pos2 is None:
         return None  # Distance undefined if any position missing
+
     d_row = abs(pos1[0] - pos2[0])
     d_col = abs(pos1[1] - pos2[1])
+
     # Wrap around for rows
     if d_row > max_row / 2:
         d_row = max_row - d_row
+
     # Wrap around for cols
     if d_col > max_col / 2:
         d_col = max_col - d_col
+
     return np.sqrt(d_row**2 + d_col**2)
 
 def toroidal_mean(coords, max_row, max_col):
@@ -152,30 +159,133 @@ def toroidal_mean(coords, max_row, max_col):
     """
     if not coords:
         return None
+
     rows = np.array([c[0] for c in coords])
     cols = np.array([c[1] for c in coords])
+
     # Convert to complex numbers on the unit circle
     row_angles = rows / max_row * 2 * np.pi
     col_angles = cols / max_col * 2 * np.pi
+
     mean_row_angle = np.angle(np.mean(np.exp(1j * row_angles)))
     mean_col_angle = np.angle(np.mean(np.exp(1j * col_angles)))
+
     # Map back to 0–max range
     mean_row = (mean_row_angle % (2 * np.pi)) / (2 * np.pi) * max_row
     mean_col = (mean_col_angle % (2 * np.pi)) / (2 * np.pi) * max_col
+
     return (int(round(mean_row)) % max_row, int(round(mean_col)) % max_col)
 ```
 
 Agent Detection
 ```
 def find_plane_position(R, target_value):
-    """Finds plane positions using 4x2 uniform block detection"""
-    # Returns (row, col) coordinates or None
+    """
+    Finds the average (row, col) position of all 4x2 uniform blocks of a given target_value in R.
+    Parameters:
+        R (ndarray): 2D array of R channel values with scoreboard regions removed.
+        target_value (int): The value to search for (223 for first_0, 111 for second_0).
+    Returns:
+        (row, col): Tuple of integer coordinates (averaged) or None if not found.
+    """
+    positions = []
+
+    for row in range(R.shape[0] - 3):      # Stop at row 252 to allow 4-row box
+        for col in range(R.shape[1] - 1):  # Stop at col 158 to allow 2-col box
+            submatrix = R[row:row+4, col:col+2]
+
+            if np.all(submatrix == target_value):
+                # Take the (3rd row, 2nd col) = (row + 2, col + 1)
+                positions.append((row + 2, col + 1))
+
+    if positions:
+        return toroidal_mean(positions, R.shape[0], R.shape[1])
+    else:
+        return None
 ```
 Bullet Detection
 ```
-def find_bullet_positions(R, step_count=None, visualize=False):
-    """Detects bullet positions with edge filtering and visualization"""
-    # Returns list of bullet coordinates
+def find_bullet_positions(
+    R,
+    step_count=None,
+    white_thresh_low=245,
+    white_thresh_high=255,
+    min_bullet_area=0.5,
+    max_bullet_area=1,
+    edge_margin=2,  # Parameter to ignore detections near edges
+    visualize=False
+):
+    """
+    Detect bullet positions in R-channel by excluding background, clouds, and edges.
+
+    Parameters:
+        R (np.ndarray): Red channel image.
+        step_count (int): Optional debug step.
+        white_thresh_low (int): Minimum R value to consider a bullet.
+        white_thresh_high (int): Maximum R value (255).
+        min_bullet_area (int): Minimum contour area to consider.
+        max_bullet_area (int): Maximum contour area to consider.
+        edge_margin (int): Number of pixels to exclude near the edge.
+        visualize (bool): Whether to show debug visualizations.
+
+    Returns:
+        List of (x, y) bullet positions.
+    """
+    height, width = R.shape[:2]
+
+    # Apply intensity filter to extract only very bright pixels
+    bullet_mask = cv2.inRange(R, white_thresh_low, white_thresh_high)
+
+    # Remove small noise
+    kernel = np.ones((2, 2), np.uint8)
+    bullet_mask = cv2.morphologyEx(bullet_mask, cv2.MORPH_OPEN, kernel)
+
+    # Find contours
+    contours, _ = cv2.findContours(bullet_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    bullet_positions = []
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if min_bullet_area <= area <= max_bullet_area:
+            M = cv2.moments(cnt)
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+
+                # Skip detections near the edge
+                if (edge_margin <= cx < width - edge_margin) and (edge_margin <= cy < height - edge_margin):
+                    bullet_positions.append((cx, cy))
+
+    # Optional visualization
+    if visualize:
+        fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+
+        axs[0].imshow(R, cmap="gray")
+        axs[0].set_title(f"R-Channel (Step {step_count})")
+
+        axs[1].imshow(bullet_mask, cmap="gray")
+        axs[1].set_title("Binary Mask (Thresholded)")
+
+        R_copy = cv2.cvtColor(R, cv2.COLOR_GRAY2BGR)
+        for (cx, cy) in bullet_positions:
+            cv2.circle(R_copy, (cx, cy), 3, (0, 255, 0), -1)  # Green dot
+
+        axs[2].imshow(R_copy)
+        axs[2].set_title("Detected Bullets (Filtered)")
+
+        for ax in axs:
+            ax.axis('off')
+        plt.tight_layout()
+        plt.show()
+
+    # Text log
+    if step_count is not None:
+        if bullet_positions:
+            print(f"[BULLET DETECTION] Step {step_count}: Found {len(bullet_positions)} bullet(s) → {bullet_positions}")
+        else:
+            print(f"[BULLET DETECTION] Step {step_count}: No bullets detected.")
+
+    return bullet_positions
 ```
 Distance Calculations
 ```
@@ -187,6 +297,24 @@ def toroidal_distance(pos1, pos2, max_row, max_col):
 
 The project includes comprehensive visualization tools:
 - RGB Image Display: Shows full game state
+  ```
+def visualize_rgb_image(rgb_image, step=None, title="RGB Image"):
+    """
+    Displays the full RGB image.
+
+    Parameters:
+        rgb_image (ndarray): A (H, W, 3) RGB image (in standard numpy uint8 format).
+        step (int, optional): Optional step counter to annotate the plot title.
+        title (str): Custom title for the plot.
+    """
+    plt.figure(figsize=(6, 6))
+    plt.imshow(rgb_image)
+    plot_title = f"{title} (Step {step})" if step is not None else title
+    plt.title(plot_title)
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+  ```
 - R-Channel Analysis: Displays processed red channel data
 - Plane Position Tracking: Visualizes detected agent and enemy positions
 - Bullet Detection Overlay: Shows identified bullets on game frame
