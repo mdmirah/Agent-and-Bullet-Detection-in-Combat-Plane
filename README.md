@@ -287,11 +287,169 @@ def find_bullet_positions(
 
     return bullet_positions
 ```
-Distance Calculations
+Offensive Reward Wrapper
 ```
-def toroidal_distance(pos1, pos2, max_row, max_col):
-    """Calculates wrap-around distance on toroidal grid"""
-    # Returns Euclidean distance with periodic boundaries
+# Optional print statements for troubleshooting are presently commented out
+class OffensiveRewardWrapper(BaseWrapper):
+    def __init__(self, env, shoot_actions=None, reward_multiplier=5, shoot_bonus=0.1):
+        super().__init__(env)
+        self.shoot_actions = shoot_actions or {1, 10, 11, 12, 13, 14, 15, 16, 17}
+        self.reward_multiplier = reward_multiplier
+        self.shoot_bonus = shoot_bonus
+        self.first_0_step_count = 0  # Counter for first_0 steps
+
+    def step(self, action):
+        agent = self.agent_selection
+        super().step(action)
+
+        if agent == "first_0" and agent in self.agents:
+            self.first_0_step_count += 1  # Increment step count
+
+            original = self.rewards[agent]
+            if original > 0:
+                self.rewards[agent] = original * self.reward_multiplier
+                #print(f"[REWARD DEBUG] {agent} hit: reward {original:.3f} → {self.rewards[agent]:.3f}")
+
+            if self.first_0_step_count % 5 == 0:
+                observation = self.env.observe(agent)
+                R = get_cleaned_R(observation)
+
+                first_pos = find_plane_position(R, 223)
+                second_pos = find_plane_position(R, 111)
+
+                #print(f"[DEBUG] first_0 position: {first_pos}, second_0 position: {second_pos}")
+                #print(f"[REWARD DEBUG] {agent} used action {action}")
+
+                if action in self.shoot_actions:
+                    self.rewards[agent] += self.shoot_bonus
+                    #print(f"[REWARD DEBUG] {agent} used action {action} on step {self.first_0_step_count}, +{self.shoot_bonus:.3f} → total: {self.rewards[agent]:.3f}")
+
+                # Proximity reward
+                max_toroidal_dist = 151.6
+                min_dist = 10
+                max_score = 0.5
+
+                dist = toroidal_distance(first_pos, second_pos, R.shape[0], R.shape[1])
+                if dist is not None:
+                    clamped_dist = max(min_dist, min(dist, max_toroidal_dist))
+                    proximity_reward = max_score * (max_toroidal_dist - clamped_dist) / (max_toroidal_dist - min_dist)
+                    self.rewards[agent] += proximity_reward
+                    #print(f"[REWARD DEBUG] {agent} proximity distance {dist:.2f}, reward +{proximity_reward:.3f} → total: {self.rewards[agent]:.3f}")
+                else:
+                    #print(f"[REWARD DEBUG] {agent} proximity distance unknown (position obscured)")
+                    pass
+
+            if self.first_0_step_count % 5 == 0:
+                print(f"[OFFFENSIVE] Step: {self.first_0_step_count}, Reward: {self.rewards[agent]}")
+```
+
+Defensive Reward Wrapper
+```
+class DefensiveRewardWrapper(BaseWrapper):
+    def __init__(self, env, bullet_value=255, bullet_block_size=2):
+        super().__init__(env)
+        self.bullet_value = bullet_value
+        self.bullet_block_size = bullet_block_size
+        self.first_0_step_count = 0
+
+        self.action_labels = {
+            0: "No operation", 1: "Fire", 2: "Move up", 3: "Move right",
+            4: "Move left", 5: "Move down", 6: "Move upright", 7: "Move upleft",
+            8: "Move downright", 9: "Move downleft", 10: "Fire up", 11: "Fire right",
+            12: "Fire left", 13: "Fire down", 14: "Fire upright", 15: "Fire upleft",
+            16: "Fire downright", 17: "Fire downleft"
+        }
+
+    def step(self, action):
+        agent = self.agent_selection
+        super().step(action)
+
+        if agent == "first_0" and agent in self.agents:
+
+            self.first_0_step_count += 1
+            action_label = self.action_labels.get(action, "Unknown")
+
+
+            # Calculate rewards only every 10 steps
+            if self.first_0_step_count % 10 != 0:
+                return
+
+            # Get red channel from observation
+            observation = self.env.observe(agent)
+            R = get_cleaned_R(observation)
+
+            # Detect agent and opponent
+            first_pos = find_plane_position(R, 223)
+            second_pos = find_plane_position(R, 111)
+
+            # # Visualize the observation
+            #visualize_rgb_image(observation, self.first_0_step_count)
+            #visualize_planes(R, self.first_0_step_count)
+
+            # Detect all bullets (treat all as dangerous)
+            bullets = find_bullet_positions(
+            R,
+            step_count=self.first_0_step_count,
+            white_thresh_low=100,
+            white_thresh_high=255,
+            min_bullet_area=0.5,
+            max_bullet_area=1.0,
+            edge_margin=2,
+            visualize=False
+            )
+
+            # print(f"[DEFENSIVE AGENT ACTION] Step {self.first_0_step_count}: Agent {agent} took action {action} ({action_label})")
+
+            # Initialize reward components
+            distance_reward = 0.0
+            bullet_avoidance_reward = 0.0
+            damage_penalty = 0.0
+            firing_penalty = 0.0
+
+            if first_pos:
+                # Distance-from-enemy reward
+                if second_pos:
+                    max_dist = 151.6
+                    dist = toroidal_distance(first_pos, second_pos, R.shape[0], R.shape[1])
+                    if dist is not None:
+                        distance_reward = 0.4 * (dist / max_dist)
+                        self.rewards[agent] += distance_reward
+
+                # Bullet avoidance reward
+                if bullets:
+                    bullet_distances = [
+                        toroidal_distance(first_pos, bpos, R.shape[0], R.shape[1])
+                        for bpos in bullets if bpos is not None
+                    ]
+                    bullet_distances = [d for d in bullet_distances if d is not None]
+                    if bullet_distances:
+                        closest = min(bullet_distances)
+                        max_bullet_dist = 151.6
+                        bullet_avoidance_reward = 0.6 * min(closest / max_bullet_dist, 1.0)
+                        self.rewards[agent] += bullet_avoidance_reward
+
+                    # Damage penalty for getting hit
+                    hit_radius = 3
+                    for bpos in bullets:
+                        dist_to_self = toroidal_distance(bpos, first_pos, R.shape[0], R.shape[1])
+                        if dist_to_self is not None and dist_to_self <= hit_radius:
+                            damage_penalty = -0.6
+                            self.rewards[agent] += damage_penalty
+                            break
+
+            # Penalty for firing action
+            if action in {1, 10, 11, 12, 13, 14, 15, 16, 17}:
+                firing_penalty = -0.4
+                self.rewards[agent] += firing_penalty
+
+            # Final reward report
+            print(f"Step: {self.first_0_step_count}, "
+              f"First Pos: {first_pos}, Second Pos: {second_pos}, "
+              f"\nDistance Reward: {distance_reward:.4f}, "
+              f"Bullet Avoidance Reward: {bullet_avoidance_reward:.4f}, "
+              f"Damage Penalty: {damage_penalty:.4f}, "
+              f"Firing Penalty: {firing_penalty:.4f}, "
+              f"Total Reward: {self.rewards[agent]:.4f}\n")
 ```
 ## Visualization
 
