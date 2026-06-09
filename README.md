@@ -47,8 +47,7 @@ The project trains intelligent agents to play the **Combat Plane game (bi-plane 
 
 ```bash
 # Install dependencies
-pip install pettingzoo[atari] supersuit moviepy gymnasium==1.1.1 imageio ffmpeg-python -q
-pip install pettingzoo[atari] supersuit stable-baselines3[extra] moviepy imageio ffmpeg-python -q
+pip install pettingzoo[atari] supersuit stable-baselines3[extra] moviepy gymnasium==1.1.1 imageio ffmpeg-python -q
 pip install autorom[accept-rom-license] -q
 AutoROM --accept-license
 pip install shimmy>=2.0 -q
@@ -59,9 +58,26 @@ pip install --upgrade pettingzoo
 Basic Setup
 ```
 import numpy as np
+import imageio
+from PIL import Image
+import matplotlib.pyplot as plt
+
 from pettingzoo.atari import combat_plane_v2
 import supersuit as ss
 from stable_baselines3 import PPO
+
+from IPython.display import HTML
+from base64 import b64encode
+
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.monitor import Monitor
+import os
+
+import cv2
+from pettingzoo.utils.conversions import aec_to_parallel
+from pettingzoo.utils.wrappers.base import BaseWrapper
+from pettingzoo.utils.wrappers.base_parallel import BaseParallelWrapper
+import pettingzoo.utils.env
 
 # Create base environment
 env = combat_plane_v2.env(render_mode='rgb_image', game_version='bi-plane', guided_missile=False)
