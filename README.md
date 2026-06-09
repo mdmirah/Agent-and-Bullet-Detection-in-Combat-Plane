@@ -316,8 +316,122 @@ def visualize_rgb_image(rgb_image, step=None, title="RGB Image"):
     plt.show()
 ```
 - R-Channel Analysis: Displays processed red channel data
+```
+def visualize_r_channel(R, step=None, center=None):
+    import matplotlib.pyplot as plt
+    plt.imshow(R, cmap='gray')
+    if center:
+        plt.scatter(center[1], center[0], color='red', s=40, label='Agent')
+        plt.legend()
+    if step:
+        plt.title(f"R-Channel at Step {step}")
+    plt.show()
+```
 - Plane Position Tracking: Visualizes detected agent and enemy positions
+```
+def visualize_planes(R, step=None):
+    """
+    Visualizes the red channel and the detected positions of the two planes.
+
+    Parameters:
+        R (ndarray): 2D grayscale red channel image.
+        step (int, optional): Step count to label the figure.
+    """
+    # Detect plane positions
+    first_pos = find_plane_position(R, target_value=223)
+    second_pos = find_plane_position(R, target_value=111)
+
+    # Convert grayscale R to BGR for color annotations
+    R_bgr = cv2.cvtColor(R, cv2.COLOR_GRAY2BGR)
+
+    if first_pos:
+        cv2.circle(R_bgr, (first_pos[1], first_pos[0]), 5, (255, 0, 0), -1)  # Blue for first_0
+        cv2.putText(R_bgr, "1", (first_pos[1]+6, first_pos[0]), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
+
+    if second_pos:
+        cv2.circle(R_bgr, (second_pos[1], second_pos[0]), 5, (0, 0, 255), -1)  # Red for second_0
+        cv2.putText(R_bgr, "2", (second_pos[1]+6, second_pos[0]), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+
+    # Plot
+    plt.figure(figsize=(6, 6))
+    plt.imshow(R_bgr)
+    title = f"Plane Positions (Step {step})" if step is not None else "Plane Positions"
+    plt.title(title)
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+```
 - Bullet Detection Overlay: Shows identified bullets on game frame
+```
+# Subsection of previous bullet detection code...
+"""
+def find_bullet_positions(
+    R,
+    step_count=None,
+    white_thresh_low=245,
+    white_thresh_high=255,
+    min_bullet_area=0.5,
+    max_bullet_area=1,
+    edge_margin=2,  # Parameter to ignore detections near edges
+    visualize=False
+):
+    height, width = R.shape[:2]
+
+    # Apply intensity filter to extract only very bright pixels
+    bullet_mask = cv2.inRange(R, white_thresh_low, white_thresh_high)
+
+    # Remove small noise
+    kernel = np.ones((2, 2), np.uint8)
+    bullet_mask = cv2.morphologyEx(bullet_mask, cv2.MORPH_OPEN, kernel)
+
+    # Find contours
+    contours, _ = cv2.findContours(bullet_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    bullet_positions = []
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if min_bullet_area <= area <= max_bullet_area:
+            M = cv2.moments(cnt)
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+
+                # Skip detections near the edge
+                if (edge_margin <= cx < width - edge_margin) and (edge_margin <= cy < height - edge_margin):
+                    bullet_positions.append((cx, cy))
+"""
+    # Optional visualization
+    if visualize:
+        fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+
+        axs[0].imshow(R, cmap="gray")
+        axs[0].set_title(f"R-Channel (Step {step_count})")
+
+        axs[1].imshow(bullet_mask, cmap="gray")
+        axs[1].set_title("Binary Mask (Thresholded)")
+
+        R_copy = cv2.cvtColor(R, cv2.COLOR_GRAY2BGR)
+        for (cx, cy) in bullet_positions:
+            cv2.circle(R_copy, (cx, cy), 3, (0, 255, 0), -1)  # Green dot
+
+        axs[2].imshow(R_copy)
+        axs[2].set_title("Detected Bullets (Filtered)")
+
+        for ax in axs:
+            ax.axis('off')
+        plt.tight_layout()
+        plt.show()
+"""
+    # Text log
+    if step_count is not None:
+        if bullet_positions:
+            print(f"[BULLET DETECTION] Step {step_count}: Found {len(bullet_positions)} bullet(s) → {bullet_positions}")
+        else:
+            print(f"[BULLET DETECTION] Step {step_count}: No bullets detected.")
+
+    return bullet_positions
+"""
+```
 
 ## File Structure
 ```
