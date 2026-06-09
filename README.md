@@ -849,6 +849,114 @@ def find_bullet_positions(
 """
 ```
 
+## Base Environment Wrapping and Training
+Agent training was accomplished using the Proximal Policy Optimization (PPO) framework from **Stable-Baselines3** with both Convolutional Neural Network (CNN) and Multi-Layer Perceptron (MLP) policies. CNN policy-based training did not utilize feature extraction wrappers and instead used the raw image frames.
+
+CNN Based Training
+```
+from pettingzoo.utils.conversions import aec_to_parallel
+env = combat_plane_v2.env(render_mode=None, game_version="bi-plane", guided_missile=False)
+
+# 6 unique behaviors
+mapping = [0, 1, 2, 5, 10, 13]
+env = ReduceActionSpaceWrapper(env, mapping)
+env = OffensiveRewardWrapper(env) # Offensive Agent
+# env = DefensiveRewardWrapper(env) # Defensive Agent
+# env = HybridRewardWrapper(env) # Hybrid Agent
+
+env = ss.resize_v1(env, x_size=84, y_size=84)
+env = ss.frame_stack_v1(env, 4)
+env = ss.black_death_v3(env)
+
+env = aec_to_parallel(env)
+env = ss.pettingzoo_env_to_vec_env_v1(env)
+env = ss.concat_vec_envs_v1(env, 1, num_cpus=1, base_class='stable_baselines3')
+
+env.reset()
+
+checkpoint_callback = CheckpointCallback(
+    save_freq=10_000,            
+    save_path="/content/drive/MyDrive/MARL",
+    name_prefix="PPO_biplane"     
+)
+
+model = PPO(
+    "CnnPolicy",
+    env,
+    learning_rate=1e-4,
+    buffer_size=100_000,
+    learning_starts=10_000,
+    batch_size=32,
+    tau=1.0,
+    gamma=0.99,
+    train_freq=4,
+    target_update_interval=1000,
+    exploration_fraction=0.2,
+    exploration_initial_eps=1.0,
+    exploration_final_eps=0.05,
+    verbose=1,
+)
+
+model.learn(total_timesteps=500_000, callback=[checkpoint_callback])
+```
+
+MLP Based Training
+```
+from pettingzoo.atari import combat_plane_v2
+
+mapping = [0, 1, 2, 5, 10, 13]
+
+def make_feature_aec_base():
+    aec = combat_plane_v2.env(
+        render_mode=None,
+        game_version="bi-plane",
+        guided_missile=False
+    )
+
+    #aec = OffensiveRewardWrapper(aec)
+    aec = DefensiveRewardWrapper(aec)
+
+    aec = ReduceActionSpaceWrapper(aec, mapping)
+
+    return aec
+
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3 import PPO
+
+def make_feature_train_env():
+    aec = make_feature_aec_base()
+    env = FeatureRandomOpponentEnv(
+        aec_env=aec,
+        train_agent="first_0",
+        max_episode_steps=5000
+    )
+    env = Monitor(env)
+    return env
+
+train_env = DummyVecEnv([make_feature_train_env])
+eval_env = DummyVecEnv([make_feature_train_env])
+
+model = PPO(
+    "MlpPolicy",
+    train_env,
+    learning_rate=3e-4,
+    n_steps=256,
+    batch_size=64,
+    n_epochs=10,
+    gamma=0.99,
+    gae_lambda=0.95,
+    clip_range=0.2,
+    ent_coef=0.01,
+    vf_coef=0.5,
+    max_grad_norm=0.5,
+    verbose=1,
+    device="cuda",   
+)
+
+model.learn(total_timesteps=500_000, callback=[checkpoint_callback], reset_num_timesteps=False)
+```
+
 ## File Structure
 ```
 ├── Agent_and_Bullet_Detection_in_Combat_Plane_Oct_1_2025.ipynb
