@@ -112,6 +112,59 @@ model = PPO("CnnPolicy", env, n_steps=768, batch_size=256, verbose=1)
 model.learn(total_timesteps=10000, callback=checkpoint_callback)
 ```
 ## Custom Functions
+Image Extraction and Filtering to Red (R) Channel Only
+```
+def get_cleaned_R(observation):
+    """
+    Extracts the R channel from the observation and zeroes out known scoreboard regions.
+    Parameters:
+        observation (ndarray): A (256, 160, 3) observation image.
+    Returns:
+        R_cleaned (ndarray): A (256, 160) array with scoreboard regions set to 0.
+    """
+    R = observation[:, :, 0].copy()
+    # Zero out first_0's scoreboard (rows 4:14, cols 32:44)
+    R[4:14, 32:44] = 0
+    # Zero out second_0's scoreboard (rows 4:14, cols 87:99)
+    R[4:14, 112:124] = 0
+    return R
+```
+
+Toroidal Distance and Mean Functions
+```
+def toroidal_distance(pos1, pos2, max_row, max_col):
+    if pos1 is None or pos2 is None:
+        return None  # Distance undefined if any position missing
+    d_row = abs(pos1[0] - pos2[0])
+    d_col = abs(pos1[1] - pos2[1])
+    # Wrap around for rows
+    if d_row > max_row / 2:
+        d_row = max_row - d_row
+    # Wrap around for cols
+    if d_col > max_col / 2:
+        d_col = max_col - d_col
+    return np.sqrt(d_row**2 + d_col**2)
+
+def toroidal_mean(coords, max_row, max_col):
+    """
+    Compute the mean (row, col) on a toroidal (periodic) grid.
+    Handles wraparound when averaging coordinates.
+    """
+    if not coords:
+        return None
+    rows = np.array([c[0] for c in coords])
+    cols = np.array([c[1] for c in coords])
+    # Convert to complex numbers on the unit circle
+    row_angles = rows / max_row * 2 * np.pi
+    col_angles = cols / max_col * 2 * np.pi
+    mean_row_angle = np.angle(np.mean(np.exp(1j * row_angles)))
+    mean_col_angle = np.angle(np.mean(np.exp(1j * col_angles)))
+    # Map back to 0–max range
+    mean_row = (mean_row_angle % (2 * np.pi)) / (2 * np.pi) * max_row
+    mean_col = (mean_col_angle % (2 * np.pi)) / (2 * np.pi) * max_col
+    return (int(round(mean_row)) % max_row, int(round(mean_col)) % max_col)
+```
+
 Agent Detection
 ```
 def find_plane_position(R, target_value):
