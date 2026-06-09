@@ -6,7 +6,7 @@ In this project Ayden Kemp [@aydensairplanes](https://github.com/aydensairplanes
 
 ## Overview
 
-The project trains intelligent agents to play the **Combat Plane game (bi-plane version)** from the Atari environment. The agents use **PPO (Proximal Policy Optimization)** and incorporate **custom reward functions** to learn specific combat strategies.
+The project trains intelligent agents to play the **Combat: Plane game (bi-plane version)** from the Atari environment. The agents use **PPO (Proximal Policy Optimization)** and incorporate **custom reward functions** to learn specific combat strategies.
 
 ---
 
@@ -21,6 +21,8 @@ The project trains intelligent agents to play the **Combat Plane game (bi-plane 
 <img width="488" height="381" alt="image" src="https://github.com/user-attachments/assets/ed27f755-29fa-4b52-a3fa-aafe0f37c5f2" />
 
 - **Toroidal Distance Calculations:** Handles wrap-around game mechanics for the Atari environment.
+- **Reduced Action Space Mapping:** The default Combat: Plane environment from **PettingZoo** contains 18 discrete action choices. However, these only correspond to 6 unique actions (fly straight, fly clockwise, fly counterclockwise, fly straight while firing a projectile, fly clockwise while firing a projectile, fly counterclockwise while firing a projectile). A wrapper to reduce the action space to only the 6 unique actions was developed to streamline agent training.
+- **Feature Extraction:** MLP-based agent training requires a 1D vector input as compared to the multidimensional image data provided to an agent undergoing CNN-based training. A pipeline for extracting key features for use as an input to MLP-based agents was developed.
 - **Custom Reward Engineering:** Domain-specific heuristic driven reward shaping for offensive and defensive agents as well as an experimental hybrid agent.
 
 ### Agent Types
